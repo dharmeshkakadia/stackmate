@@ -1,4 +1,3 @@
-
 # Stackmate - CloudFormation for CloudStack
 
 A lo-fi indie implementation designed to read existing CloudFormation templates 
@@ -68,6 +67,7 @@ templates : {'ami-1b814f72': '7fc2c704-a950-11e2-8b38-0b06fbda5106'}
 ```
 
 * Ensure you have a ssh keypair called 'Foo' (used in the template parameter below) for your account FIRST
+
 ```bash
 $ cloudmonkey
 ☁ Apache CloudStack 🐵 cloudmonkey 4.1.0-snapshot3. Type help or ? to list commands.
