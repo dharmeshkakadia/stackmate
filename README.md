@@ -68,11 +68,7 @@ service_offerings : {'m1.small' : '13954c5a-60f5-4ec8-9858-f45b12f4b846'}
 templates : {'ami-1b814f72': '7fc2c704-a950-11e2-8b38-0b06fbda5106'}
 ```
 
-<<<<<<< HEAD
 * Ensure you have a ssh keypair called 'Foo' (used in the template parameter below) for your account FIRST
-=======
-* Ensure you have a ssh keypair called 'Foo' (used in the template parameter below) for your account FIRST:
->>>>>>> b7903d18de55f2b2906ed4e2ec287c889bfa8b39
 
 ```bash
 $ cloudmonkey
