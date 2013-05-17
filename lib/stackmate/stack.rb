@@ -1,33 +1,27 @@
-require 'rufus-json/automatic'
-require 'ruote'
-require 'ruote/storage/fs_storage'
 require 'json'
 require 'set'
 require 'tsort'
-require_relative 'participants'
+require 'stackmate/logging'
+
+module StackMate
 
 class Stacker
     include TSort
-    @@class_map = { 'AWS::EC2::Instance' => 'Instance',
-              'AWS::CloudFormation::WaitConditionHandle' => 'WaitConditionHandle',
-              'AWS::CloudFormation::WaitCondition' => 'WaitCondition',
-              'AWS::EC2::SecurityGroup' => 'SecurityGroup'}
+    include Logging
 
-    def initialize(engine, templatefile, stackname, params)
+    def initialize(templatefile, stackname, params)
         @stackname = stackname
         @resolved = {}
         stackstr = File.read(templatefile)
         @templ = JSON.parse(stackstr) 
         @templ['StackName'] = @stackname
         @param_names = @templ['Parameters']
-        @engine = engine
         @deps = {}
         @pdeps = {}
         resolve_param_refs(params)
         validate_param_values
         resolve_dependencies()
         @templ['ResolvedNames'] = @resolved
-        pdef()
     end
 
     def resolve_param_refs(params)
@@ -39,6 +33,8 @@ class Stacker
     end
     
     def validate_param_values
+        #TODO CloudFormation parameters have validity constraints specified
+        #Use them to validate parameter values (e.g., email addresses)
     end
 
     def resolve_dependencies
@@ -48,7 +44,6 @@ class Stacker
             find_refs(key, val, deps, pdeps)
             deps << val['DependsOn'] if val['DependsOn']
             #print key, " depends on ", deps.to_a, "\n"
-            #print key, " depends on ", pdeps.to_a, "\n"
             @deps[key] = deps.to_a
             @pdeps[key] = pdeps.to_a
         }
@@ -99,27 +94,7 @@ class Stacker
     def tsort_each_child(name, &block)
         @deps[name].each(&block) if @deps.has_key?(name)
     end
-
-    def pdef
-        participants = self.strongly_connected_components.flatten
-        print 'Ordered list of participants: ',  participants, "\n"
-        participants.each do |p|
-            t = @templ['Resources'][p]['Type']
-            throw :unknown, t if !@@class_map[t]
-            @engine.register_participant p, @@class_map[t]
-        end
-        @engine.register_participant 'Output', 'Output'
-        participants << 'Output'
-        @pdef = Ruote.define @stackname.to_s() do
-            cursor do
-                participants.collect{ |name| __send__(name) }
-            end
-        end
-        #p @pdef
-    end
     
-    def launch
-        wfid = @engine.launch( @pdef, @templ)
-        @engine.wait_for(wfid)
-    end
+end
+
 end

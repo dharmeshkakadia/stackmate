@@ -1,8 +1,9 @@
 require 'ruote'
 require 'ruote/storage/hash_storage'
 require 'optparse'
-require_relative 'stack'
-require_relative 'waitcondition_server'
+require 'stackmate'
+require 'stackmate/classmap'
+require 'stackmate/waitcondition_server'
 
 
 options = {}
@@ -17,6 +18,14 @@ opt_parser = OptionParser.new do |opts|
     opts.on("-p", "--parameters [KEY1=VALUE1 KEY2=VALUE2..]", "Parameter values used to create the stack.") do |p|
         options[:params] = p
         puts p
+    end
+    options[:wait_conditions] = true
+    opts.on("-n", "--no-wait-conditions", "Do not create any wait conditions") do 
+        options[:wait_conditions] = false
+    end
+    options[:dry_run] = false
+    opts.on("-r", "--dry-run", "Parse and pretend to execute but not actually do anything. Useful for validating the template") do 
+        options[:dry_run] = true
     end
     opts.on("-h", "--help", "Show this message")  do
         puts opts
@@ -36,8 +45,10 @@ rescue => e
 end
 
 if options[:file] && stack_name != ''
-    Thread.new do
-      WaitConditionServer.run!
+    if options[:wait_conditions]
+      Thread.new do
+        StackMate::WaitConditionServer.run!
+      end
     end
     engine = Ruote::Dashboard.new(
       Ruote::Worker.new(
@@ -47,7 +58,8 @@ if options[:file] && stack_name != ''
     unknown = nil
     unresolved = catch(:unresolved) do
         unknown = catch(:unknown) do
-            p = Stacker.new(engine, options[:file], stack_name, options[:params])
+            StackMate.configure('NOOP') if options[:dry_run]
+            p = StackMate::StackExecutor.new(options[:file], stack_name, options[:params], engine, options[:wait_conditions])
             p.launch()
             nil
         end

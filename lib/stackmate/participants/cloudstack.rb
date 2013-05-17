@@ -1,13 +1,21 @@
-require 'rufus-json/automatic'
-require 'ruote'
 require 'json'
 require 'cloudstack_ruby_client'
-require 'set'
-require 'tsort'
-require 'Base64'
 require 'yaml'
+require 'stackmate/logging'
+
+module StackMate
+
+class CloudStackApiException < StandardError
+    def initialize(msg)
+        super(msg)
+    end
+end
 
 class CloudStackResource < Ruote::Participant
+  include Logging
+
+  attr_reader :name
+
   def initialize()
       @url = ENV['URL']
       @apikey = ENV['APIKEY']
@@ -20,31 +28,43 @@ class CloudStackResource < Ruote::Participant
     reply
   end
 
-  def make_request(cmd, args)
-      resp = @client.send(cmd, args)
-      jobid = resp['jobid'] if resp
-      resp = api_poll(jobid, 3, 3) if jobid
-      return resp
-  end
-
-  def api_poll (jobid, num, period)
-    i = 0 
-    loop do 
-      break if i > num
-      resp = @client.queryAsyncJobResult({'jobid' => jobid})
-      if resp
-          return resp['jobresult'] if resp['jobstatus'] == 1
-          return {'jobresult' => {}} if resp['jobstatus'] == 2
-      end
-      sleep(period)
-      i += 1 
+  protected
+    
+    def make_request(cmd, args)
+        begin
+          logger.debug "Going to make request #{cmd} to CloudStack server for resource #{@name}"
+          resp = @client.send(cmd, args)
+          jobid = resp['jobid'] if resp
+          resp = api_poll(jobid, 3, 3) if jobid
+          return resp
+        rescue => e
+          logger.error("Failed to make request #{cmd} to CloudStack server while creating resource #{@name}")
+          logger.error e.message + "\n " + e.backtrace.join("\n ")
+          raise e
+        rescue SystemExit
+          logger.error "Rescued a SystemExit exception"
+          raise CloudStackApiException, "Did not get 200 OK while making api call #{cmd}"
+        end
     end
+  
+    def api_poll (jobid, num, period)
+      i = 0 
+      loop do 
+        break if i > num
+        resp = @client.queryAsyncJobResult({'jobid' => jobid})
+        if resp
+            return resp['jobresult'] if resp['jobstatus'] == 1
+            return {'jobresult' => {}} if resp['jobstatus'] == 2
+        end
+        sleep(period)
+        i += 1 
+      end
     return {}
-  end
+    end
 
 end
 
-class Instance < CloudStackResource
+class CloudStackInstance < CloudStackResource
   def initialize()
     super
     @localized = {}
@@ -53,7 +73,7 @@ class Instance < CloudStackResource
 
   def on_workitem
     myname = workitem.participant_name
-    p myname
+    @name = myname
     resolved = workitem.fields['ResolvedNames']
     resolved['AWS::StackId'] = workitem.fei.wfid #TODO put this at launch time
     props = workitem.fields['Resources'][workitem.participant_name]['Properties']
@@ -81,6 +101,7 @@ class Instance < CloudStackResource
     args['keypair'] = keypair if keypair
     args['userdata'] = userdata  if userdata
     resultobj = make_request('deployVirtualMachine', args)
+    logger.debug("Created resource #{myname}")
 
     reply
   end
@@ -141,45 +162,12 @@ class Instance < CloudStackResource
 
 end
 
-class WaitConditionHandle < Ruote::Participant
+
+class CloudStackSecurityGroup < CloudStackResource
   def on_workitem
     myname = workitem.participant_name
-    p myname
-    presigned_url = 'http://localhost:4567/waitcondition/' + workitem.fei.wfid + '/' + myname
-    workitem.fields['ResolvedNames'][myname] = presigned_url
-    print "Your pre-signed URL is: ", presigned_url, "\n"
-    print "Try: ", "\n", "curl -X PUT --data 'foo' ", presigned_url,  "\n"
-    WaitCondition.create_handle(myname, presigned_url)
-
-    reply
-  end
-end
-
-class WaitCondition < Ruote::Participant
-  @@handles = {}
-  @@conditions = []
-  def on_workitem
-    p workitem.participant_name
-    @@conditions << self
-    @wi = workitem
-  end
-
-  def self.create_handle(handle_name, handle)
-      @@handles[handle_name] = handle
-  end
-
-  def set_handle(handle_name)
-      reply(@wi) if @@handles[handle_name]
-  end
-
-  def self.get_conditions()
-      @@conditions
-  end
-end
-
-class SecurityGroup < CloudStackResource
-  def on_workitem
-    myname = workitem.participant_name
+    logger.debug("Going to create resource #{myname}")
+    @name = myname
     p myname
     resolved = workitem.fields['ResolvedNames']
     props = workitem.fields['Resources'][myname]['Properties']
@@ -189,6 +177,7 @@ class SecurityGroup < CloudStackResource
              'description' => props['GroupDescription']
     }
     make_request('createSecurityGroup', args)
+    logger.debug("created resource #{myname}")
     props['SecurityGroupIngress'].each do |rule|
         cidrIp = rule['CidrIp']
         if cidrIp.kind_of?  Hash
@@ -209,12 +198,5 @@ class SecurityGroup < CloudStackResource
   end
 end
 
-class Output < Ruote::Participant
-  def on_workitem
-    #p workitem.fields.keys
-    p workitem.participant_name
-    p "Done"
-    reply
-  end
-end
 
+end

@@ -3,19 +3,16 @@ require 'ruote'
 require 'ruote/storage/fs_storage'
 require 'json'
 require 'sinatra/base'
-require_relative 'participants'
+require 'stackmate/participants/common'
+
+module StackMate
 
 class WaitConditionServer < Sinatra::Base
   set :static, false
   set :run, true
 
-  #def initialize(engine)
   def initialize()
       super
-  end
-
-  get '/' do
-     'Hello world!'
   end
 
   put '/waitcondition/:wfeid/:waithandle' do
@@ -29,5 +26,7 @@ class WaitConditionServer < Sinatra::Base
 
 
   run! if app_file == $0
+
+end
 
 end
